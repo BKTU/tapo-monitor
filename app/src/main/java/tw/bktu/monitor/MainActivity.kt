@@ -2,6 +2,9 @@ package tw.bktu.monitor
 
 import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.app.UiModeManager
+import android.content.res.Configuration
+import android.view.KeyEvent
 import android.content.ClipData
 import android.content.Intent
 import android.graphics.Color
@@ -65,6 +68,16 @@ class MainActivity : AppCompatActivity() {
     private var fullId: String? = null
     private val handler = Handler(Looper.getMainLooper())
     private var lastW = 0
+
+    // ---- 遙控器（Google TV）----
+    private val isTv: Boolean by lazy {
+        (getSystemService(UI_MODE_SERVICE) as UiModeManager).currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
+    }
+    private var focusId: String? = null      // 遙控器目前選到的畫面
+    private var showFocus = false           // 按過方向鍵後才顯示選取框（手機觸控時不顯示）
+    private var barIndex = -1               // >=0 代表選到上方工具列的第幾個按鈕
+    private val barButtons = ArrayList<TextView>()
+    private var okDownTime = 0L
     private var lastH = 0
 
     // ============================ 生命週期 ============================
@@ -79,7 +92,7 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor("#0D0F12"))
         }
         bar = buildBar()
-        root.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
+        root.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(if (isTv) 56 else 46)))
         grid = FrameLayout(this)
         root.addView(grid, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         clockTile = LinearLayout(this).apply {
@@ -182,6 +195,9 @@ class MainActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { marginStart = dp(6) }
         setOnClickListener { onClick() }
+        isFocusable = false
+        if (isTv) textSize = 16f
+        barButtons.add(this)
     }
 
     // ============================ 畫面格 ============================
@@ -193,8 +209,10 @@ class MainActivity : AppCompatActivity() {
         val ids = cams.map { it.id }
         order = config.order.filter { it in ids }.toMutableList()
         ids.filter { it !in order }.forEach { order.add(it) }
-        layoutMode = config.layout
+        layoutMode = "even"          // 每次進來都先顯示均分
         fullId = null
+        if (focusId == null || focusId !in ids) focusId = order.firstOrNull()
+        showFocus = isTv
 
         cams.forEach { cam ->
             val t = Tile(cam)
@@ -278,8 +296,10 @@ class MainActivity : AppCompatActivity() {
             label.addView(nameTv)
             numTv.apply { setTextColor(Color.parseColor("#8B949E")); textSize = 12f }
             label.addView(numTv, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(4) })
+            if (isTv) { nameTv.textSize = 17f; numTv.textSize = 15f }
             muteBtn.apply {
                 textSize = 16f; gravity = Gravity.CENTER
+                isFocusable = false
                 setPadding(dp(8), dp(4), dp(8), dp(4))
                 setOnClickListener {
                     setAudio(if (volume <= 0f) 0.8f else volume, !muted)
@@ -563,16 +583,136 @@ class MainActivity : AppCompatActivity() {
                 t.view.layoutParams = lp
             }
             t.numTv.text = "[${i + 1}]"
-            val main = full == null && layoutMode == "focus" && i == 0
-            (t.view.background as GradientDrawable).setStroke(
-                dp(if (main) 2 else 1), Color.parseColor(if (main) "#2F6FED" else "#222222")
-            )
+            applyStroke(t, i)
             val wantHd = isHd(id)
             if (t.hd != wantHd) {
                 t.hd = wantHd
                 connect(t)
             }
         }
+    }
+
+    /** 邊框：遙控器選到的用黃色粗框，大畫面用藍框 */
+    private fun applyStroke(t: Tile, i: Int = order.indexOf(t.cam.id)) {
+        val main = fullId == null && layoutMode == "focus" && i == 0
+        val focused = showFocus && barIndex < 0 && focusId == t.cam.id && fullId == null
+        val (w, c) = when {
+            focused -> dp(4) to "#FFD400"
+            main -> dp(2) to "#2F6FED"
+            else -> dp(1) to "#222222"
+        }
+        (t.view.background as GradientDrawable).setStroke(w, Color.parseColor(c))
+    }
+
+    private fun refreshFocusUi() {
+        tiles.values.forEach { applyStroke(it) }
+        barButtons.forEachIndexed { i, b ->
+            (b.background as GradientDrawable).apply {
+                setColor(Color.parseColor(if (i == barIndex) "#FFD400" else "#262A31"))
+            }
+            b.setTextColor(Color.parseColor(if (i == barIndex) "#000000" else "#DDDDDD"))
+        }
+    }
+
+    // ============================ 遙控器 ============================
+
+    private fun isOk(code: Int) = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER ||
+        code == KeyEvent.KEYCODE_NUMPAD_ENTER || code == KeyEvent.KEYCODE_BUTTON_A
+
+    override fun dispatchKeyEvent(e: KeyEvent): Boolean {
+        val code = e.keyCode
+        val ours = isOk(code) || code in KeyEvent.KEYCODE_1..KeyEvent.KEYCODE_9 || when (code) {
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> true
+            else -> false
+        }
+        if (!ours || tiles.isEmpty()) return super.dispatchKeyEvent(e)
+
+        if (isOk(code)) {
+            if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) okDownTime = e.eventTime
+            if (e.action == KeyEvent.ACTION_UP) onOk(e.eventTime - okDownTime > 600)
+            return true
+        }
+        if (e.action != KeyEvent.ACTION_DOWN) return true
+        showFocus = true
+        when (code) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> moveFocus(-1, 0)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> moveFocus(1, 0)
+            KeyEvent.KEYCODE_DPAD_UP -> moveFocus(0, -1)
+            KeyEvent.KEYCODE_DPAD_DOWN -> moveFocus(0, 1)
+            KeyEvent.KEYCODE_MENU -> focusedTile()?.let { it.setAudio(if (it.volume <= 0f) 0.8f else it.volume, !it.muted) }
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE ->
+                setFull(if (fullId != null) null else focusId)
+            else -> {
+                val n = code - KeyEvent.KEYCODE_1
+                if (n in order.indices) {
+                    focusId = order[n]
+                    if (fullId != null) setFull(focusId) else makeMain(order[n])
+                }
+            }
+        }
+        refreshFocusUi()
+        return true
+    }
+
+    private fun focusedTile(): Tile? = focusId?.let { tiles[it] }
+
+    /** OK：選到大畫面時全螢幕；選到其他格時換到大畫面；長按：切換靜音 */
+    private fun onOk(long: Boolean) {
+        if (barIndex >= 0) { barButtons.getOrNull(barIndex)?.performClick(); refreshFocusUi(); return }
+        val t = focusedTile() ?: return
+        if (long) {
+            t.setAudio(if (t.volume <= 0f) 0.8f else t.volume, !t.muted)
+            Toast.makeText(this, t.cam.name + if (t.muted) " 靜音" else " 開啟聲音", Toast.LENGTH_SHORT).show()
+            return
+        }
+        when {
+            fullId != null -> setFull(null)
+            layoutMode == "focus" && order.firstOrNull() != t.cam.id -> makeMain(t.cam.id)
+            else -> setFull(t.cam.id)
+        }
+        refreshFocusUi()
+    }
+
+    /** 方向鍵：找該方向上最近的畫面；往上沒有畫面時進入工具列 */
+    private fun moveFocus(dx: Int, dy: Int) {
+        if (barIndex >= 0) {
+            when {
+                dy > 0 -> barIndex = -1
+                dx != 0 -> barIndex = (barIndex + dx).coerceIn(0, barButtons.size - 1)
+            }
+            return
+        }
+        if (fullId != null) {
+            // 全螢幕時左右切換監視器
+            if (dx != 0) {
+                val i = order.indexOf(fullId!!)
+                val next = order[(i + dx + order.size) % order.size]
+                focusId = next
+                setFull(next)
+            }
+            return
+        }
+        val cur = focusedTile() ?: run { focusId = order.firstOrNull(); return }
+        val cx = cur.view.left + cur.view.width / 2f
+        val cy = cur.view.top + cur.view.height / 2f
+        var best: String? = null
+        var bestScore = Float.MAX_VALUE
+        for ((id, t) in tiles) {
+            if (id == cur.cam.id || t.view.visibility != View.VISIBLE) continue
+            val tx = t.view.left + t.view.width / 2f
+            val ty = t.view.top + t.view.height / 2f
+            val ddx = tx - cx
+            val ddy = ty - cy
+            val along = if (dx != 0) ddx * dx else ddy * dy
+            if (along <= 1f) continue
+            val across = if (dx != 0) kotlin.math.abs(ddy) else kotlin.math.abs(ddx)
+            val score = along + across * 2f
+            if (score < bestScore) { bestScore = score; best = id }
+        }
+        if (best != null) focusId = best
+        else if (dy < 0 && bar.visibility == View.VISIBLE) barIndex = 0
     }
 
     private fun makeMain(id: String) {
