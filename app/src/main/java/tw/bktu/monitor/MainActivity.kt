@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.TypedValue
 import android.view.DragEvent
 import android.view.GestureDetector
 import android.view.Gravity
@@ -38,6 +39,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.rtsp.RtspMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.min
 
@@ -48,6 +52,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var bar: LinearLayout
     private lateinit var grid: FrameLayout
     private lateinit var layoutBtn: TextView
+    private lateinit var barClock: TextView
+    private lateinit var clockTile: LinearLayout
+    private lateinit var clockTime: TextView
+    private lateinit var clockDate: TextView
+    private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.TAIWAN)
+    private val dateFmt = SimpleDateFormat("M月d日 EEEE", Locale.TAIWAN)
 
     private val tiles = LinkedHashMap<String, Tile>()
     private var order = mutableListOf<String>()
@@ -72,6 +82,25 @@ class MainActivity : AppCompatActivity() {
         root.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
         grid = FrameLayout(this)
         root.addView(grid, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        clockTile = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#13161A"))
+                setStroke(dp(1), Color.parseColor("#222222"))
+                cornerRadius = dp(6).toFloat()
+            }
+            visibility = View.GONE
+        }
+        clockTime = TextView(this).apply {
+            setTextColor(Color.parseColor("#E6E6E6")); gravity = Gravity.CENTER
+            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+        }
+        clockDate = TextView(this).apply {
+            setTextColor(Color.parseColor("#8B949E")); gravity = Gravity.CENTER
+        }
+        clockTile.addView(clockTime)
+        clockTile.addView(clockDate)
         setContentView(root)
 
         grid.addOnLayoutChangeListener { _, l, t, r, b, _, _, _, _ ->
@@ -92,6 +121,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        handler.post(ticker)
         if (!config.isReady) {
             startActivity(Intent(this, SettingsActivity::class.java))
             Toast.makeText(this, "請先設定監視器帳號密碼", Toast.LENGTH_LONG).show()
@@ -118,13 +148,13 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor("#16191E"))
             setPadding(dp(10), 0, dp(6), 0)
         }
-        val title = TextView(this).apply {
-            text = "● 監視器"
+        barClock = TextView(this).apply {
             setTextColor(Color.parseColor("#E6E6E6"))
-            textSize = 16f
+            textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
+            maxLines = 1
         }
-        b.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        b.addView(barClock, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
         layoutBtn = barButton("均分") {
             layoutMode = if (layoutMode == "focus") "even" else "focus"
@@ -171,6 +201,7 @@ class MainActivity : AppCompatActivity() {
             tiles[cam.id] = t
             grid.addView(t.view, FrameLayout.LayoutParams(1, 1))
         }
+        grid.addView(clockTile, FrameLayout.LayoutParams(1, 1))
         relayout()
     }
 
@@ -410,6 +441,20 @@ class MainActivity : AppCompatActivity() {
         handler.postDelayed(r, 5000)
     }
 
+    /** 每秒更新時鐘 */
+    private val ticker = object : Runnable {
+        override fun run() {
+            val now = Date()
+            val time = timeFmt.format(now)
+            val date = dateFmt.format(now)
+            val wide = resources.displayMetrics.widthPixels > resources.displayMetrics.heightPixels
+            barClock.text = if (wide) "●  $date  $time" else "●  $time"
+            clockTime.text = time
+            clockDate.text = date
+            handler.postDelayed(this, 1000L - System.currentTimeMillis() % 1000L)
+        }
+    }
+
     /** 看門狗：畫面 15 秒沒有前進就重新連線 */
     private val watchdog = object : Runnable {
         override fun run() {
@@ -443,6 +488,7 @@ class MainActivity : AppCompatActivity() {
         layoutBtn.text = if (layoutMode == "focus") "均分" else "1 大 ${tiles.size - 1} 小"
 
         val rects = HashMap<String, IntArray>()   // x, y, w, h
+        var clockRect: IntArray? = null
         val n = order.size
         val full = fullId
 
@@ -483,6 +529,25 @@ class MainActivity : AppCompatActivity() {
             order.forEachIndexed { i, id ->
                 rects[id] = intArrayOf((i % cols) * (cellW + gap), (i / cols) * (cellH + gap), cellW, cellH)
             }
+            // 最後一列有空位 → 放時鐘
+            val empty = rows * cols - n
+            if (empty > 0) {
+                val x = (n % cols) * (cellW + gap)
+                clockRect = intArrayOf(x, (rows - 1) * (cellH + gap), w - x, cellH)
+            }
+        }
+
+        val cr = clockRect
+        if (cr != null) {
+            clockTile.visibility = View.VISIBLE
+            clockTile.layoutParams = FrameLayout.LayoutParams(cr[2], cr[3]).apply {
+                leftMargin = cr[0]; topMargin = cr[1]
+            }
+            val size = min(cr[3] * 0.24f, cr[2] * 0.16f)
+            clockTime.setTextSize(TypedValue.COMPLEX_UNIT_PX, size)
+            clockDate.setTextSize(TypedValue.COMPLEX_UNIT_PX, size * 0.32f)
+        } else {
+            clockTile.visibility = View.GONE
         }
 
         order.forEachIndexed { i, id ->
