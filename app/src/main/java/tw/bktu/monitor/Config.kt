@@ -1,0 +1,75 @@
+package tw.bktu.monitor
+
+import android.content.Context
+import android.content.SharedPreferences
+import android.net.Uri
+import org.json.JSONArray
+import org.json.JSONObject
+
+data class Cam(val id: String, var name: String, var ip: String)
+
+/** 所有設定都存在手機的 SharedPreferences，不會出現在程式碼裡 */
+class Config(context: Context) {
+    private val prefs: SharedPreferences =
+        context.getSharedPreferences("monitor", Context.MODE_PRIVATE)
+
+    var user: String
+        get() = prefs.getString("user", "") ?: ""
+        set(v) = prefs.edit().putString("user", v).apply()
+
+    var pass: String
+        get() = prefs.getString("pass", "") ?: ""
+        set(v) = prefs.edit().putString("pass", v).apply()
+
+    var cams: List<Cam>
+        get() {
+            val raw = prefs.getString("cams", null) ?: return DEFAULT_CAMS
+            return try {
+                val arr = JSONArray(raw)
+                (0 until arr.length()).map {
+                    val o = arr.getJSONObject(it)
+                    Cam(o.getString("id"), o.getString("name"), o.getString("ip"))
+                }
+            } catch (e: Exception) {
+                DEFAULT_CAMS
+            }
+        }
+        set(list) {
+            val arr = JSONArray()
+            list.forEach { arr.put(JSONObject().put("id", it.id).put("name", it.name).put("ip", it.ip)) }
+            prefs.edit().putString("cams", arr.toString()).apply()
+        }
+
+    var order: List<String>
+        get() = (prefs.getString("order", "") ?: "").split(",").filter { it.isNotBlank() }
+        set(v) = prefs.edit().putString("order", v.joinToString(",")).apply()
+
+    var layout: String
+        get() = prefs.getString("layout", "focus") ?: "focus"
+        set(v) = prefs.edit().putString("layout", v).apply()
+
+    fun volume(id: String): Float = prefs.getFloat("vol_$id", 0.8f)
+    fun muted(id: String): Boolean = prefs.getBoolean("muted_$id", true)
+    fun setAudio(id: String, vol: Float, muted: Boolean) {
+        prefs.edit().putFloat("vol_$id", vol).putBoolean("muted_$id", muted).apply()
+    }
+
+    val isReady: Boolean get() = user.isNotBlank() && pass.isNotBlank() && cams.isNotEmpty()
+
+    fun rtspUrl(ip: String, hd: Boolean): String {
+        val u = Uri.encode(user)
+        val p = Uri.encode(pass)
+        val path = if (hd) "stream1" else "stream2"
+        return "rtsp://$u:$p@${ip.trim()}:554/$path"
+    }
+
+    companion object {
+        val DEFAULT_CAMS = listOf(
+            Cam("c1", "監視器 1", "192.168.68.53"),
+            Cam("c2", "監視器 2", "192.168.68.59"),
+            Cam("c3", "監視器 3", "192.168.68.58"),
+            Cam("c4", "監視器 4", "192.168.68.103"),
+            Cam("c5", "監視器 5", "192.168.68.50"),
+        )
+    }
+}
