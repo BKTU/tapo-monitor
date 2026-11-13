@@ -68,6 +68,7 @@ class MainActivity : AppCompatActivity() {
     private val tiles = LinkedHashMap<String, Tile>()
     private var order = mutableListOf<String>()
     private var quadOrder = mutableListOf<String>()   // 四格有自己的排序，不受 1 大 4 小影響
+    private var evenOrder = mutableListOf<String>()   // 均分也有自己的排序
     private var layoutMode = "focus"
     private var fullId: String? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -227,6 +228,8 @@ class MainActivity : AppCompatActivity() {
         ids.filter { it !in order }.forEach { order.add(it) }
         quadOrder = config.quadOrder.filter { it in ids }.distinct().toMutableList()
         for (id in order) if (quadOrder.size < minOf(4, ids.size) && id !in quadOrder) quadOrder.add(id)
+        evenOrder = config.evenOrder.filter { it in ids }.distinct().toMutableList()
+        for (id in order) if (id !in evenOrder) evenOrder.add(id)
         // 開啟時的版面：設定裡選（預設 1 大 4 小；也可以選「上次使用」）
         layoutMode = when (val st = config.startLayout) {
             "last" -> config.layout.takeIf { it in listOf("focus", "even", "quad") } ?: "focus"
@@ -311,7 +314,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 override fun onLongPress(e: MotionEvent) {
                     if (fullId != null) return
-                    if (layoutMode == "quad") { pickCamera(cam.id); return }
+                    if (layoutMode == "quad" || layoutMode == "even") { pickCamera(cam.id); return }
                     val data = ClipData.newPlainText("cam", cam.id)
                     view.startDragAndDrop(data, View.DragShadowBuilder(view), cam.id, 0)
                     view.alpha = 0.4f
@@ -643,7 +646,7 @@ class MainActivity : AppCompatActivity() {
             val rows = ceil(n / cols.toDouble()).toInt()
             val cellW = (w - gap * (cols - 1)) / cols
             val cellH = (h - gap * (rows - 1)) / rows
-            order.forEachIndexed { i, id ->
+            evenOrder.forEachIndexed { i, id ->
                 rects[id] = intArrayOf((i % cols) * (cellW + gap), (i / cols) * (cellH + gap), cellW, cellH)
             }
             // 最後一列有空位 → 放時鐘
@@ -689,7 +692,7 @@ class MainActivity : AppCompatActivity() {
                 lp.topMargin = r[1]
                 t.view.layoutParams = lp
             }
-            t.numTv.text = "[${i + 1}]"
+            t.numTv.text = "[${(slotList()?.indexOf(id)?.takeIf { it >= 0 } ?: i) + 1}]"
             applyStroke(t, i)
             val wantHd = isHd(id)
             if (t.hd != wantHd) {
@@ -834,8 +837,9 @@ class MainActivity : AppCompatActivity() {
                 setFull(if (fullId != null) null else focusId)
             else -> {
                 val n = code - KeyEvent.KEYCODE_1
-                if (layoutMode == "quad" && fullId == null) {
-                    if (n in quadOrder.indices) focusId = quadOrder[n]
+                val sl = slotList()
+                if (sl != null && fullId == null) {
+                    if (n in sl.indices) focusId = sl[n]
                 } else if (n in order.indices) {
                     focusId = order[n]
                     if (fullId != null) setFull(focusId) else makeMain(order[n])
@@ -853,7 +857,7 @@ class MainActivity : AppCompatActivity() {
         if (barIndex >= 0) { barButtons.getOrNull(barIndex)?.performClick(); refreshFocusUi(); return }
         val t = focusedTile() ?: return
         if (long) {
-            if (layoutMode == "quad" && fullId == null) { pickCamera(t.cam.id); return }
+            if ((layoutMode == "quad" || layoutMode == "even") && fullId == null) { pickCamera(t.cam.id); return }
             t.setAudio(if (t.volume <= 0f) 0.8f else t.volume, !t.muted)
             Toast.makeText(this, t.cam.name + if (t.muted) " 靜音" else " 開啟聲音", Toast.LENGTH_SHORT).show()
             return
@@ -925,6 +929,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun moveTo(fromId: String, toId: String) {
+        slotList()?.let { list ->
+            val a = list.indexOf(fromId)
+            val b = list.indexOf(toId)
+            if (a >= 0 && b >= 0) { list[a] = toId; list[b] = fromId; saveSlots(); relayout() }
+            return
+        }
         val to = order.indexOf(toId)
         order.remove(fromId)
         order.add(to, fromId)
@@ -966,22 +976,35 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** 選擇某一格要顯示哪一支監視器（四格模式） */
+    /** 目前版面自己的排序清單（四格／均分），1 大 4 小則為 null */
+    private fun slotList(): MutableList<String>? = when (layoutMode) {
+        "quad" -> quadOrder
+        "even" -> evenOrder
+        else -> null
+    }
+
+    private fun saveSlots() {
+        if (layoutMode == "quad") config.quadOrder = quadOrder
+        if (layoutMode == "even") config.evenOrder = evenOrder
+    }
+
     private fun pickCamera(slotId: String) {
+        val list = slotList() ?: return
         val cams = config.cams
         val names = cams.map { c ->
-            val pos = quadOrder.indexOf(c.id)
+            val pos = list.indexOf(c.id)
             c.name + if (pos >= 0) "（第 ${pos + 1} 格）" else ""
         }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("這一格要顯示")
             .setItems(names) { _, which ->
                 val chosen = cams[which].id
-                val a = quadOrder.indexOf(slotId)
-                val b = quadOrder.indexOf(chosen)
+                val a = list.indexOf(slotId)
+                val b = list.indexOf(chosen)
                 if (a >= 0 && a != b) {
-                    if (b >= 0) quadOrder[b] = slotId   // 已在其他格 → 兩格互換
-                    quadOrder[a] = chosen
-                    config.quadOrder = quadOrder
+                    if (b >= 0) list[b] = slotId   // 已在其他格 → 兩格互換
+                    list[a] = chosen
+                    saveSlots()
                     focusId = chosen
                     relayout()
                 }
