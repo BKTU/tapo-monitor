@@ -53,6 +53,11 @@ class Config(context: Context) {
         get() = prefs.getBoolean("showLabels", false)
         set(v) = prefs.edit().putBoolean("showLabels", v).apply()
 
+    /** 每格是否顯示音量圖示 */
+    var showVolume: Boolean
+        get() = prefs.getBoolean("showVolume", true)
+        set(v) = prefs.edit().putBoolean("showVolume", v).apply()
+
     /** 小畫面用軟體解碼：null = 自動（電視開、手機關） */
     var softSmall: Boolean?
         get() = when (prefs.getInt("softSmall", -1)) { 1 -> true; 0 -> false; else -> null }

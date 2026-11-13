@@ -3,6 +3,8 @@ package tw.bktu.monitor
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
+import android.view.View
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
@@ -57,14 +59,22 @@ class SettingsActivity : AppCompatActivity() {
         // 顯示
         col.addView(title("顯示", 16f))
         val labelBtn = button("", "#262A31") {}
-        fun labelText() = if (config.showLabels) "監視器名稱列：顯示" else "監視器名稱列：隱藏"
+        fun labelText() = if (config.showLabels) "監視器名稱：顯示" else "監視器名稱：隱藏"
         labelBtn.text = labelText()
         labelBtn.setOnClickListener {
             config.showLabels = !config.showLabels
             labelBtn.text = labelText()
         }
         col.addView(labelBtn)
-        col.addView(hint("隱藏時：點一下畫面換到大畫面、點兩下全螢幕、長按拖曳排序。"))
+        val volBtn = button("", "#262A31") {}
+        fun volText() = if (config.showVolume) "音量圖示：顯示" else "音量圖示：隱藏"
+        volBtn.text = volText()
+        volBtn.setOnClickListener {
+            config.showVolume = !config.showVolume
+            volBtn.text = volText()
+        }
+        col.addView(volBtn)
+        col.addView(hint("名稱隱藏時：點一下畫面換到大畫面、點兩下全螢幕、長按拖曳排序。"))
 
         // 進階：解碼方式
         col.addView(title("進階", 16f))
@@ -103,7 +113,9 @@ class SettingsActivity : AppCompatActivity() {
             text = "✕"
             setTextColor(Color.parseColor("#E5484D"))
             textSize = 18f
-            setPadding(dp(12), dp(8), dp(4), dp(8))
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            background = focusBg("#0D0F12")
+            isFocusable = true
             setOnClickListener {
                 list.removeView(row)
                 rows.remove(r)
@@ -148,12 +160,32 @@ class SettingsActivity : AppCompatActivity() {
         setTextColor(Color.parseColor("#8B949E"))
     }
 
+    /** 遙控器選到時顯示黃色粗框，一眼看出目前選到哪個 */
+    private fun focusBg(fill: String): StateListDrawable {
+        fun box(strokeDp: Int, color: String) = GradientDrawable().apply {
+            setColor(Color.parseColor(fill))
+            cornerRadius = dp(8).toFloat()
+            setStroke(dp(strokeDp), Color.parseColor(color))
+        }
+        val focused = box(4, "#FFD400")
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), focused)
+            addState(intArrayOf(android.R.attr.state_pressed), focused)
+            addState(intArrayOf(), box(1, "#333944"))
+        }
+    }
+
     private fun input(hint: String, value: String) = EditText(this).apply {
         this.hint = hint
         setText(value)
         setSingleLine(true)
         setTextColor(Color.WHITE)
         setHintTextColor(Color.parseColor("#6B7380"))
+        background = focusBg("#1A1D22")
+        setPadding(dp(12), dp(10), dp(12), dp(10))
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(8) }
     }
 
     private fun button(text: String, color: String, onClick: () -> Unit) = TextView(this).apply {
@@ -162,9 +194,8 @@ class SettingsActivity : AppCompatActivity() {
         gravity = Gravity.CENTER
         setTextColor(Color.WHITE)
         setPadding(0, dp(12), 0, dp(12))
-        background = GradientDrawable().apply {
-            setColor(Color.parseColor(color)); cornerRadius = dp(8).toFloat()
-        }
+        background = focusBg(color)
+        isFocusable = true
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(14) }

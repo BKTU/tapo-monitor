@@ -341,7 +341,19 @@ class MainActivity : AppCompatActivity() {
                 true
             }
             view.addView(label, FrameLayout.LayoutParams(-1, dp(if (isTv) 44 else 38), Gravity.BOTTOM))
-            label.visibility = if (config.showLabels) View.VISIBLE else View.GONE
+            // 名稱（燈號、名稱、編號、全螢幕鈕）與音量圖示可分開開關
+            val names = config.showLabels
+            val vol = config.showVolume
+            label.visibility = if (names || vol) View.VISIBLE else View.GONE
+            val nv = if (names) View.VISIBLE else View.GONE
+            dot.visibility = nv; nameTv.visibility = nv; numTv.visibility = nv; fsBtn.visibility = nv
+            if (!names) {
+                // 只剩音量圖示時，把它推到右邊
+                numTv.visibility = View.INVISIBLE
+                numTv.layoutParams = (numTv.layoutParams as LinearLayout.LayoutParams).apply { width = 0; weight = 1f }
+            }
+            muteBtn.visibility = if (vol) View.VISIBLE else View.GONE
+            if (!names) label.background = null
 
             // 拖曳目標提示
             dropOverlay.apply {
