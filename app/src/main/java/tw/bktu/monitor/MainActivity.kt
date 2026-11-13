@@ -181,8 +181,8 @@ class MainActivity : AppCompatActivity() {
         }
         b.addView(barClock, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
-        // 版面按鈕分開：目前的版面用藍色標示
-        for ((mode, label) in listOf("focus" to "1大4小", "even" to "均分", "quad" to "四格")) {
+        // 版面按鈕分開：目前的版面用藍色標示；「四格」放第一個，從畫面按「上」直接選到
+        for ((mode, label) in listOf("quad" to "四格", "focus" to "1大4小", "even" to "均分")) {
             val btn = barButton(label) { setLayoutMode(mode) }
             layoutButtons[mode] = btn
             b.addView(btn)
