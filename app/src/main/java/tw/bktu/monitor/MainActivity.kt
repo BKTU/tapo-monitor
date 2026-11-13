@@ -285,8 +285,9 @@ class MainActivity : AppCompatActivity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(8), 0, dp(4), 0)
+                // 名稱列放在下方，避免遮到監視器左上角的時間戳記
                 background = GradientDrawable(
-                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    GradientDrawable.Orientation.BOTTOM_TOP,
                     intArrayOf(Color.argb(190, 0, 0, 0), Color.TRANSPARENT)
                 )
             }
@@ -327,7 +328,7 @@ class MainActivity : AppCompatActivity() {
                 view.alpha = 0.4f
                 true
             }
-            view.addView(label, FrameLayout.LayoutParams(-1, dp(38), Gravity.TOP))
+            view.addView(label, FrameLayout.LayoutParams(-1, dp(if (isTv) 44 else 38), Gravity.BOTTOM))
 
             // 拖曳目標提示
             dropOverlay.apply {
