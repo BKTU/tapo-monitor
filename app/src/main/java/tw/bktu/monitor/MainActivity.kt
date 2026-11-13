@@ -262,6 +262,11 @@ class MainActivity : AppCompatActivity() {
         init {
             view.background = GradientDrawable().apply {
                 setColor(Color.BLACK)
+                cornerRadius = dp(6).toFloat()
+            }
+            // 邊框畫在最上層（foreground），影像填滿時才不會蓋住選取框
+            view.foreground = GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
                 setStroke(dp(1), Color.parseColor("#222222"))
                 cornerRadius = dp(6).toFloat()
             }
@@ -571,7 +576,8 @@ class MainActivity : AppCompatActivity() {
         val w = grid.width
         val h = grid.height
         if (w == 0 || h == 0 || tiles.isEmpty()) return
-        val gap = dp(4)
+        val quad = layoutMode == "quad" && fullId == null
+        val gap = if (quad) 0 else dp(4)   // 四格：不留間隔
         val landscape = w >= h
         layoutButtons["focus"]?.text = "1大${maxOf(0, tiles.size - 1)}小"
         refreshFocusUi()
@@ -722,12 +728,21 @@ class MainActivity : AppCompatActivity() {
     private fun applyStroke(t: Tile, i: Int = order.indexOf(t.cam.id)) {
         val main = showFocus && fullId == null && layoutMode == "focus" && i == 0
         val focused = showFocus && barIndex < 0 && focusId == t.cam.id && fullId == null
+        val quad = layoutMode == "quad" && fullId == null
         val (w, c) = when {
-            focused -> dp(4) to "#FFD400"
+            focused -> dp(if (isTv) 5 else 4) to "#FFD400"
             main -> dp(2) to "#2F6FED"
+            quad -> 0 to "#00000000"           // 四格：沒選到就不畫框
             else -> dp(1) to "#222222"
         }
-        (t.view.background as GradientDrawable).setStroke(w, Color.parseColor(c))
+        val radius = if (quad) 0f else dp(6).toFloat()
+        (t.view.foreground as GradientDrawable).apply {
+            setStroke(w, Color.parseColor(c)); cornerRadius = radius
+        }
+        (t.view.background as GradientDrawable).cornerRadius = radius
+        // 四格：影像放大填滿整格（不留黑邊）；其他版面：完整顯示
+        val mode = if (quad) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
+        if (t.playerView.resizeMode != mode) t.playerView.resizeMode = mode
     }
 
     private fun setLayoutMode(mode: String) {
