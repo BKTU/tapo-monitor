@@ -259,6 +259,7 @@ class MainActivity : AppCompatActivity() {
             playerView.useController = false
             playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
             playerView.setShutterBackgroundColor(Color.BLACK)
+            playerView.setKeepContentOnPlayerReset(true)   // 換畫質時保留最後一格畫面，不黑屏
             view.addView(playerView, FrameLayout.LayoutParams(-1, -1))
 
             statusTv.apply {
@@ -463,7 +464,8 @@ class MainActivity : AppCompatActivity() {
 
     // ============================ 連線 ============================
 
-    private fun connect(t: Tile) {
+    /** quiet = true：換畫質用，不顯示「連線中」，畫面停在最後一格直到新畫面出來 */
+    private fun connect(t: Tile, quiet: Boolean = false) {
         t.retry?.let { handler.removeCallbacks(it) }
         t.retry = null
         val p = t.player ?: return
@@ -476,7 +478,7 @@ class MainActivity : AppCompatActivity() {
         p.prepare()
         t.started = true
         p.playWhenReady = true
-        t.setStatus("連線中…")
+        if (!quiet) t.setStatus("連線中…")
         t.lastPos = -1L
         t.lastProgress = SystemClock.elapsedRealtime()
     }
@@ -525,8 +527,8 @@ class MainActivity : AppCompatActivity() {
 
     // ============================ 排版 ============================
 
-    private fun isHd(id: String): Boolean =
-        fullId == id || (fullId == null && layoutMode == "focus" && order.firstOrNull() == id)
+    /** 只有全螢幕用高畫質；大畫面、小畫面都用低畫質，切換時不必重新連線 */
+    private fun isHd(id: String): Boolean = fullId == id
 
     private fun relayout() {
         val w = grid.width
@@ -627,7 +629,7 @@ class MainActivity : AppCompatActivity() {
         for (t in downgrades) {
             val id = t.cam.id
             handler.postDelayed({
-                if (tiles[id] === t) { if (t.started) t.recreatePlayer(); connect(t) }
+                if (tiles[id] === t) { val q = t.started; if (q) t.recreatePlayer(); connect(t, quiet = q) }
             }, delay)
             delay += 300L
         }
@@ -636,7 +638,7 @@ class MainActivity : AppCompatActivity() {
             for (t in upgrades) {
                 val id = t.cam.id
                 handler.postDelayed({
-                    if (tiles[id] === t) { if (t.started) t.recreatePlayer(); connect(t) }
+                    if (tiles[id] === t) { val q = t.started; if (q) t.recreatePlayer(); connect(t, quiet = q) }
                 }, delay)
                 delay += 300L
             }
