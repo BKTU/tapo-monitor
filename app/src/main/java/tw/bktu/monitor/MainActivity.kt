@@ -606,7 +606,7 @@ class MainActivity : AppCompatActivity() {
         } else if (layoutMode == "focus" && n > 1) {
             val others = order.drop(1)
             if (landscape) {
-                val mainW = (w - gap) * 69 / 100   // 小畫面欄稍微放大（原本 25%）
+                val mainW = (w - gap) * 73 / 100   // 小畫面欄 27%（搭配放大填滿）
                 rects[order[0]] = intArrayOf(0, 0, mainW, h)
                 val colX = mainW + gap
                 val colW = w - colX
@@ -735,7 +735,7 @@ class MainActivity : AppCompatActivity() {
         val focused = showFocus && barIndex < 0 && focusId == t.cam.id && fullId == null
         val quad = layoutMode == "quad" && fullId == null
         val (w, c) = when {
-            focused -> dp(if (isTv) 5 else 4) to "#FFD400"
+            focused -> (if (quad) dp(2) else dp(3)) to "#E6FFFFFF"   // 細白框，比較不突兀
             main -> dp(2) to "#2F6FED"
             quad -> 0 to "#00000000"           // 四格：沒選到就不畫框
             else -> dp(1) to "#222222"
@@ -746,7 +746,9 @@ class MainActivity : AppCompatActivity() {
         }
         (t.view.background as GradientDrawable).cornerRadius = radius
         // 四格：影像放大填滿整格（不留黑邊）；其他版面：完整顯示
-        val mode = if (quad) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
+        // 四格、1 大 4 小的小畫面：放大填滿整格（不留黑邊）；其他：完整顯示
+        val smallInFocus = fullId == null && layoutMode == "focus" && i > 0
+        val mode = if (quad || smallInFocus) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
         if (t.playerView.resizeMode != mode) t.playerView.resizeMode = mode
     }
 
@@ -764,7 +766,7 @@ class MainActivity : AppCompatActivity() {
         tiles.values.forEach { applyStroke(it) }
         barButtons.forEachIndexed { i, b ->
             val current = (showFocus || !isTv) && layoutButtons[layoutMode] === b
-            val bg = when { i == barIndex -> "#FFD400"; current -> "#2F6FED"; else -> "#262A31" }
+            val bg = when { i == barIndex -> "#F0F0F0"; current -> "#2F6FED"; else -> "#262A31" }
             (b.background as GradientDrawable).setColor(Color.parseColor(bg))
             b.setTextColor(Color.parseColor(if (i == barIndex) "#000000" else if (current) "#FFFFFF" else "#DDDDDD"))
         }
@@ -795,6 +797,11 @@ class MainActivity : AppCompatActivity() {
         showFocus = true
         bumpIdle()
         // 選取框隱藏時，第一下方向鍵只把它叫出來，不移動
+        // 選取框隱藏時按「上」：直接選到工具列第一個按鈕（四格）
+        if (wasHidden && code == KeyEvent.KEYCODE_DPAD_UP && fullId == null && bar.visibility == View.VISIBLE) {
+            barIndex = 0
+            refreshFocusUi(); return true
+        }
         if (wasHidden && code in listOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
                 KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT)) {
             refreshFocusUi(); return true
