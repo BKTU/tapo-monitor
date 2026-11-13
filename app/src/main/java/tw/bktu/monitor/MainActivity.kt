@@ -606,7 +606,10 @@ class MainActivity : AppCompatActivity() {
         } else if (layoutMode == "focus" && n > 1) {
             val others = order.drop(1)
             if (landscape) {
-                val mainW = (w - gap) * 73 / 100   // 小畫面欄 27%（搭配放大填滿）
+                // 小畫面欄寬 = 16:9 影像剛好的寬度：不裁切、不留黑邊（高度固定是 1/4，這已是最大）
+                val smallH = (h - gap * (others.size - 1)) / others.size
+                val colTarget = smallH * 16 / 9
+                val mainW = (w - gap - colTarget).coerceIn(w / 2, w * 4 / 5)
                 rects[order[0]] = intArrayOf(0, 0, mainW, h)
                 val colX = mainW + gap
                 val colW = w - colX
@@ -747,8 +750,7 @@ class MainActivity : AppCompatActivity() {
         (t.view.background as GradientDrawable).cornerRadius = radius
         // 四格：影像放大填滿整格（不留黑邊）；其他版面：完整顯示
         // 四格、1 大 4 小的小畫面：放大填滿整格（不留黑邊）；其他：完整顯示
-        val smallInFocus = fullId == null && layoutMode == "focus" && i > 0
-        val mode = if (quad || smallInFocus) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
+        val mode = if (quad) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
         if (t.playerView.resizeMode != mode) t.playerView.resizeMode = mode
     }
 
