@@ -53,6 +53,11 @@ class Config(context: Context) {
         get() = prefs.getBoolean("showLabels", false)
         set(v) = prefs.edit().putBoolean("showLabels", v).apply()
 
+    /** 開啟 App 時的版面：focus / even / quad / last（上次使用） */
+    var startLayout: String
+        get() = prefs.getString("startLayout", "focus") ?: "focus"
+        set(v) = prefs.edit().putString("startLayout", v).apply()
+
     /** 每格是否顯示音量圖示 */
     var showVolume: Boolean
         get() = prefs.getBoolean("showVolume", true)

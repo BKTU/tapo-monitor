@@ -58,6 +58,17 @@ class SettingsActivity : AppCompatActivity() {
         })
         // 顯示
         col.addView(title("顯示", 16f))
+        val starts = listOf("focus", "even", "quad", "last")
+        val startNames = listOf("1大4小", "均分", "四格", "上次使用的版面")
+        var si = starts.indexOf(config.startLayout).coerceAtLeast(0)
+        val startBtn = button("", "#262A31") {}
+        startBtn.text = "開啟時的版面：" + startNames[si]
+        startBtn.setOnClickListener {
+            si = (si + 1) % starts.size
+            config.startLayout = starts[si]
+            startBtn.text = "開啟時的版面：" + startNames[si]
+        }
+        col.addView(startBtn)
         val labelBtn = button("", "#262A31") {}
         fun labelText() = if (config.showLabels) "監視器名稱：顯示" else "監視器名稱：隱藏"
         labelBtn.text = labelText()

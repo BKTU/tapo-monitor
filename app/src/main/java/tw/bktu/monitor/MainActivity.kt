@@ -222,12 +222,17 @@ class MainActivity : AppCompatActivity() {
         val ids = cams.map { it.id }
         order = config.order.filter { it in ids }.toMutableList()
         ids.filter { it !in order }.forEach { order.add(it) }
-        layoutMode = "focus"         // 每次進來都先顯示 1 大 4 小
+        // 開啟時的版面：設定裡選（預設 1 大 4 小；也可以選「上次使用」）
+        layoutMode = when (val st = config.startLayout) {
+            "last" -> config.layout.takeIf { it in listOf("focus", "even", "quad") } ?: "focus"
+            else -> st
+        }
         lastAudioId = null
         fullId = null
         if (focusId == null || focusId !in ids) focusId = order.firstOrNull()
         showFocus = isTv
         if (isTv) bumpIdle()
+        updateBar()
 
         cams.forEach { cam ->
             val t = Tile(cam)
@@ -601,7 +606,7 @@ class MainActivity : AppCompatActivity() {
         } else if (layoutMode == "focus" && n > 1) {
             val others = order.drop(1)
             if (landscape) {
-                val mainW = (w - gap) * 3 / 4
+                val mainW = (w - gap) * 69 / 100   // 小畫面欄稍微放大（原本 25%）
                 rects[order[0]] = intArrayOf(0, 0, mainW, h)
                 val colX = mainW + gap
                 val colW = w - colX
