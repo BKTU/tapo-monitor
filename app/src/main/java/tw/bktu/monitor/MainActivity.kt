@@ -57,6 +57,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var bar: LinearLayout
     private lateinit var grid: FrameLayout
     private lateinit var layoutBtn: TextView
+    private val layoutButtons = LinkedHashMap<String, TextView>()
     private lateinit var barClock: TextView
     private lateinit var clockTile: LinearLayout
     private lateinit var clockTime: TextView
@@ -173,16 +174,15 @@ class MainActivity : AppCompatActivity() {
         }
         b.addView(barClock, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
-        layoutBtn = barButton("均分") {
-            layoutMode = when (layoutMode) { "focus" -> "even"; "even" -> "quad"; else -> "focus" }
-            config.layout = layoutMode
-            barPeek = false
-            updateBar()
-            grid.post { relayout() }
+        // 版面按鈕分開：目前的版面用藍色標示
+        for ((mode, label) in listOf("focus" to "1大4小", "even" to "均分", "quad" to "四格")) {
+            val btn = barButton(label) { setLayoutMode(mode) }
+            layoutButtons[mode] = btn
+            b.addView(btn)
         }
-        b.addView(layoutBtn)
-        b.addView(barButton("全部靜音") { tiles.values.forEach { it.setAudio(it.volume, true) } })
-        b.addView(barButton("重新連線") { tiles.values.forEach { connect(it) } })
+        layoutBtn = layoutButtons["focus"]!!
+        b.addView(barButton(if (isTv) "全部靜音" else "靜音") { tiles.values.forEach { it.setAudio(it.volume, true) } })
+        b.addView(barButton(if (isTv) "重新連線" else "重連") { tiles.values.forEach { connect(it) } })
         b.addView(barButton("⚙") { startActivity(Intent(this, SettingsActivity::class.java)) })
         return b
     }
@@ -565,8 +565,8 @@ class MainActivity : AppCompatActivity() {
         if (w == 0 || h == 0 || tiles.isEmpty()) return
         val gap = dp(4)
         val landscape = w >= h
-        // 按鈕顯示「下一個」版面
-        layoutBtn.text = when (layoutMode) { "focus" -> "均分"; "even" -> "四格"; else -> "1 大 ${tiles.size - 1} 小" }
+        layoutButtons["focus"]?.text = "1大${maxOf(0, tiles.size - 1)}小"
+        refreshFocusUi()
 
         val rects = HashMap<String, IntArray>()   // x, y, w, h
         val downgrades = ArrayList<Tile>()   // 要改成低畫質的（先做，釋放硬體解碼器）
@@ -722,13 +722,23 @@ class MainActivity : AppCompatActivity() {
         (t.view.background as GradientDrawable).setStroke(w, Color.parseColor(c))
     }
 
+    private fun setLayoutMode(mode: String) {
+        if (layoutMode == mode) return
+        layoutMode = mode
+        config.layout = mode
+        barPeek = false
+        barIndex = -1
+        updateBar()
+        grid.post { relayout() }
+    }
+
     private fun refreshFocusUi() {
         tiles.values.forEach { applyStroke(it) }
         barButtons.forEachIndexed { i, b ->
-            (b.background as GradientDrawable).apply {
-                setColor(Color.parseColor(if (i == barIndex) "#FFD400" else "#262A31"))
-            }
-            b.setTextColor(Color.parseColor(if (i == barIndex) "#000000" else "#DDDDDD"))
+            val current = layoutButtons[layoutMode] === b
+            val bg = when { i == barIndex -> "#FFD400"; current -> "#2F6FED"; else -> "#262A31" }
+            (b.background as GradientDrawable).setColor(Color.parseColor(bg))
+            b.setTextColor(Color.parseColor(if (i == barIndex) "#000000" else if (current) "#FFFFFF" else "#DDDDDD"))
         }
     }
 
