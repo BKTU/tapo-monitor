@@ -38,6 +38,8 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.rtsp.RtspMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -78,6 +80,7 @@ class MainActivity : AppCompatActivity() {
     private var barIndex = -1               // >=0 代表選到上方工具列的第幾個按鈕
     private val barButtons = ArrayList<TextView>()
     private var okDownTime = 0L
+    private val softSmall: Boolean get() = config.softSmall ?: isTv
     private var lastH = 0
 
     // ============================ 生命週期 ============================
@@ -209,7 +212,7 @@ class MainActivity : AppCompatActivity() {
         val ids = cams.map { it.id }
         order = config.order.filter { it in ids }.toMutableList()
         ids.filter { it !in order }.forEach { order.add(it) }
-        layoutMode = "even"          // 每次進來都先顯示均分
+        layoutMode = "focus"         // 每次進來都先顯示 1 大 4 小
         fullId = null
         if (focusId == null || focusId !in ids) focusId = order.firstOrNull()
         showFocus = isTv
@@ -360,7 +363,16 @@ class MainActivity : AppCompatActivity() {
             val load = DefaultLoadControl.Builder()
                 .setBufferDurationsMs(500, 2000, 250, 500)   // 低延遲
                 .build()
-            val p = ExoPlayer.Builder(this@MainActivity).setLoadControl(load).build()
+            // 小畫面優先用軟體解碼，把硬體解碼器留給大畫面（電視的硬體解碼器數量很少）
+            val selector = MediaCodecSelector { mime, secure, tunneling ->
+                val list = MediaCodecSelector.DEFAULT.getDecoderInfos(mime, secure, tunneling)
+                if (mime.startsWith("video/") && hd == false && softSmall) list.sortedBy { if (it.softwareOnly) 0 else 1 }
+                else list
+            }
+            val rf = DefaultRenderersFactory(this@MainActivity)
+                .setEnableDecoderFallback(true)      // 硬體解碼器不夠時自動改用其他解碼器
+                .setMediaCodecSelector(selector)
+            val p = ExoPlayer.Builder(this@MainActivity, rf).setLoadControl(load).build()
             p.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(state: Int) {
                     when (state) {
@@ -370,7 +382,8 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 override fun onPlayerError(error: PlaybackException) {
-                    scheduleRetry(this@Tile, "連線失敗，5 秒後重試…")
+                    val why = error.errorCodeName.removePrefix("ERROR_CODE_")
+                    scheduleRetry(this@Tile, "連線失敗（$why）\n5 秒後重試…")
                 }
             })
             playerView.player = p
@@ -458,7 +471,7 @@ class MainActivity : AppCompatActivity() {
         t.setStatus(msg)
         val r = Runnable { t.retry = null; connect(t) }
         t.retry = r
-        handler.postDelayed(r, 5000)
+        handler.postDelayed(r, 5000L + (0..2000).random())
     }
 
     /** 每秒更新時鐘 */
@@ -508,6 +521,7 @@ class MainActivity : AppCompatActivity() {
         layoutBtn.text = if (layoutMode == "focus") "均分" else "1 大 ${tiles.size - 1} 小"
 
         val rects = HashMap<String, IntArray>()   // x, y, w, h
+        var stagger = 0
         var clockRect: IntArray? = null
         val n = order.size
         val full = fullId
@@ -587,7 +601,9 @@ class MainActivity : AppCompatActivity() {
             val wantHd = isHd(id)
             if (t.hd != wantHd) {
                 t.hd = wantHd
-                connect(t)
+                // 錯開連線，避免同時搶解碼器
+                val delay = 700L * stagger++
+                if (delay == 0L) connect(t) else handler.postDelayed({ if (tiles[id] === t) connect(t) }, delay)
             }
         }
     }

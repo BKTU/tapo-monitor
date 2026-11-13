@@ -48,6 +48,11 @@ class Config(context: Context) {
         get() = prefs.getString("layout", "focus") ?: "focus"
         set(v) = prefs.edit().putString("layout", v).apply()
 
+    /** 小畫面用軟體解碼：null = 自動（電視開、手機關） */
+    var softSmall: Boolean?
+        get() = when (prefs.getInt("softSmall", -1)) { 1 -> true; 0 -> false; else -> null }
+        set(v) = prefs.edit().putInt("softSmall", when (v) { true -> 1; false -> 0; null -> -1 }).apply()
+
     fun volume(id: String): Float = prefs.getFloat("vol_$id", 0.8f)
     fun muted(id: String): Boolean = prefs.getBoolean("muted_$id", true)
     fun setAudio(id: String, vol: Float, muted: Boolean) {

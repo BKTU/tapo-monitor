@@ -54,6 +54,20 @@ class SettingsActivity : AppCompatActivity() {
         col.addView(button("＋ 新增監視器", "#262A31") {
             addRow("c" + System.currentTimeMillis(), "監視器 ${rows.size + 1}", "192.168.68.")
         })
+        // 進階：解碼方式
+        col.addView(title("進階", 16f))
+        val modes = listOf<Boolean?>(null, true, false)
+        val names = listOf("自動（電視開）", "小畫面軟體解碼：開", "小畫面軟體解碼：關")
+        var idx = modes.indexOf(config.softSmall)
+        val softBtn = button(names[idx], "#262A31") {}
+        softBtn.setOnClickListener {
+            idx = (idx + 1) % modes.size
+            config.softSmall = modes[idx]
+            softBtn.text = names[idx]
+        }
+        col.addView(softBtn)
+        col.addView(hint(decoderInfo()))
+
         col.addView(button("儲存", "#2F6FED") { save() })
 
         setContentView(scroll)
@@ -143,6 +157,25 @@ class SettingsActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(14) }
         setOnClickListener { onClick() }
+    }
+
+    /** 顯示這台裝置的 H.264 解碼器（硬體／軟體、同時可用數量） */
+    private fun decoderInfo(): String {
+        return try {
+            val sb = StringBuilder("H.264 解碼器：\n")
+            val list = android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS)
+            for (info in list.codecInfos) {
+                if (info.isEncoder || info.supportedTypes.none { it.equals("video/avc", true) }) continue
+                val caps = info.getCapabilitiesForType("video/avc")
+                val max = if (android.os.Build.VERSION.SDK_INT >= 23) caps.maxSupportedInstances else -1
+                val sw = info.name.startsWith("OMX.google") || info.name.startsWith("c2.android")
+                sb.append("・").append(info.name).append(if (sw) "（軟體）" else "（硬體）")
+                    .append(" 最多 ").append(max).append(" 路\n")
+            }
+            sb.toString().trimEnd()
+        } catch (e: Exception) {
+            "無法讀取解碼器資訊"
+        }
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
