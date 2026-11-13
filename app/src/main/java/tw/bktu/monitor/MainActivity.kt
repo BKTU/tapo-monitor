@@ -788,6 +788,11 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val cur = focusedTile() ?: run { focusId = order.firstOrNull(); return }
+        // 1 大 4 小：從大畫面進入小畫面那一排時，固定從第一支開始
+        if (layoutMode == "focus" && order.size > 1 && cur.cam.id == order[0]) {
+            val landscape = grid.width >= grid.height
+            if ((landscape && dx > 0) || (!landscape && dy > 0)) { focusId = order[1]; return }
+        }
         val cx = cur.view.left + cur.view.width / 2f
         val cy = cur.view.top + cur.view.height / 2f
         var best: String? = null
