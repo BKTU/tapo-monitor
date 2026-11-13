@@ -174,9 +174,11 @@ class MainActivity : AppCompatActivity() {
         b.addView(barClock, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
         layoutBtn = barButton("均分") {
-            layoutMode = if (layoutMode == "focus") "even" else "focus"
+            layoutMode = when (layoutMode) { "focus" -> "even"; "even" -> "quad"; else -> "focus" }
             config.layout = layoutMode
-            relayout()
+            barPeek = false
+            updateBar()
+            grid.post { relayout() }
         }
         b.addView(layoutBtn)
         b.addView(barButton("全部靜音") { tiles.values.forEach { it.setAudio(it.volume, true) } })
@@ -247,6 +249,7 @@ class MainActivity : AppCompatActivity() {
         var lastProgress = SystemClock.elapsedRealtime()
         var retry: Runnable? = null
         var started = false          // 播放器是否已經連過線（換畫質時要重建）
+        var paused = false           // 四格模式中被隱藏、暫停播放
 
         init {
             view.background = GradientDrawable().apply {
@@ -279,11 +282,13 @@ class MainActivity : AppCompatActivity() {
                 }
                 // 名稱列關閉時，直接在畫面上操作
                 override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                    if (fullId == null) makeMain(cam.id)
+                    if (fullId != null) return true
+                    if (layoutMode == "quad") peekBar(!barPeek) else makeMain(cam.id)
                     return true
                 }
                 override fun onLongPress(e: MotionEvent) {
                     if (fullId != null) return
+                    if (layoutMode == "quad") { pickCamera(cam.id); return }
                     val data = ClipData.newPlainText("cam", cam.id)
                     view.startDragAndDrop(data, View.DragShadowBuilder(view), cam.id, 0)
                     view.alpha = 0.4f
@@ -508,7 +513,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun scheduleRetry(t: Tile, msg: String) {
-        if (t.retry != null) return
+        if (t.retry != null || t.paused) return
         t.player?.stop()
         t.setStatus(msg)
         val r = Runnable { t.retry = null; connect(t) }
@@ -536,7 +541,7 @@ class MainActivity : AppCompatActivity() {
             val now = SystemClock.elapsedRealtime()
             tiles.values.forEach { t ->
                 val p = t.player ?: return@forEach
-                if (t.retry != null) return@forEach
+                if (t.retry != null || t.paused) return@forEach
                 val pos = p.currentPosition
                 if (pos != t.lastPos) {
                     t.lastPos = pos; t.lastProgress = now
@@ -560,7 +565,8 @@ class MainActivity : AppCompatActivity() {
         if (w == 0 || h == 0 || tiles.isEmpty()) return
         val gap = dp(4)
         val landscape = w >= h
-        layoutBtn.text = if (layoutMode == "focus") "均分" else "1 大 ${tiles.size - 1} 小"
+        // 按鈕顯示「下一個」版面
+        layoutBtn.text = when (layoutMode) { "focus" -> "均分"; "even" -> "四格"; else -> "1 大 ${tiles.size - 1} 小" }
 
         val rects = HashMap<String, IntArray>()   // x, y, w, h
         val downgrades = ArrayList<Tile>()   // 要改成低畫質的（先做，釋放硬體解碼器）
@@ -571,6 +577,13 @@ class MainActivity : AppCompatActivity() {
 
         if (full != null) {
             rects[full] = intArrayOf(0, 0, w, h)
+        } else if (layoutMode == "quad") {
+            // 四格：2×2 填滿螢幕，排序前四支；其餘暫停
+            val cellW = (w - gap) / 2
+            val cellH = (h - gap) / 2
+            order.take(4).forEachIndexed { i, id ->
+                rects[id] = intArrayOf((i % 2) * (cellW + gap), (i / 2) * (cellH + gap), cellW, cellH)
+            }
         } else if (layoutMode == "focus" && n > 1) {
             val others = order.drop(1)
             if (landscape) {
@@ -632,7 +645,17 @@ class MainActivity : AppCompatActivity() {
             val r = rects[id]
             if (r == null) {
                 t.view.visibility = View.GONE
+                if (full == null && !t.paused) {
+                    // 四格模式沒顯示的那支：暫停播放，不佔解碼器
+                    t.paused = true
+                    t.retry?.let { handler.removeCallbacks(it) }
+                    t.retry = null
+                    t.player?.stop()
+                    t.hd = null
+                }
+                return@forEachIndexed
             } else {
+                if (t.paused) { t.paused = false; t.hd = null }
                 t.view.visibility = View.VISIBLE
                 val lp = FrameLayout.LayoutParams(r[2], r[3])
                 lp.leftMargin = r[0]
@@ -683,6 +706,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
         lastAudioId = audioId
+
+        if (focusId != null && rects[focusId!!] == null && fullId == null) focusId = order.firstOrNull()
     }
 
     /** 邊框：遙控器選到的用黃色粗框，大畫面用藍框 */
@@ -729,6 +754,7 @@ class MainActivity : AppCompatActivity() {
         }
         if (e.action != KeyEvent.ACTION_DOWN) return true
         showFocus = true
+        if (barPeek) { handler.removeCallbacks(hideBarLater); handler.postDelayed(hideBarLater, 6000) }
         when (code) {
             KeyEvent.KEYCODE_DPAD_LEFT -> moveFocus(-1, 0)
             KeyEvent.KEYCODE_DPAD_RIGHT -> moveFocus(1, 0)
@@ -756,6 +782,7 @@ class MainActivity : AppCompatActivity() {
         if (barIndex >= 0) { barButtons.getOrNull(barIndex)?.performClick(); refreshFocusUi(); return }
         val t = focusedTile() ?: return
         if (long) {
+            if (layoutMode == "quad" && fullId == null) { pickCamera(t.cam.id); return }
             t.setAudio(if (t.volume <= 0f) 0.8f else t.volume, !t.muted)
             Toast.makeText(this, t.cam.name + if (t.muted) " 靜音" else " 開啟聲音", Toast.LENGTH_SHORT).show()
             return
@@ -772,7 +799,7 @@ class MainActivity : AppCompatActivity() {
     private fun moveFocus(dx: Int, dy: Int) {
         if (barIndex >= 0) {
             when {
-                dy > 0 -> barIndex = -1
+                dy > 0 -> { barIndex = -1; peekBar(false) }
                 dx != 0 -> barIndex = (barIndex + dx).coerceIn(0, barButtons.size - 1)
             }
             return
@@ -810,7 +837,10 @@ class MainActivity : AppCompatActivity() {
             if (score < bestScore) { bestScore = score; best = id }
         }
         if (best != null) focusId = best
-        else if (dy < 0 && bar.visibility == View.VISIBLE) barIndex = 0
+        else if (dy < 0) {
+            if (layoutMode == "quad") peekBar(true)
+            if (bar.visibility == View.VISIBLE) barIndex = 0
+        }
     }
 
     private fun makeMain(id: String) {
@@ -833,16 +863,59 @@ class MainActivity : AppCompatActivity() {
 
     private fun setFull(id: String?) {
         fullId = id
+        barPeek = false
+        updateBar()
+        grid.post { relayout() }
+    }
+
+    // ---- 工具列：全螢幕與四格模式時隱藏，可暫時叫出 ----
+    private var barPeek = false
+    private val hideBarLater = Runnable { if (barPeek) { barPeek = false; barIndex = -1; updateBar(); refreshFocusUi() } }
+
+    private fun updateBar() {
+        val hide = fullId != null || (layoutMode == "quad" && !barPeek)
         val ctl = WindowCompat.getInsetsController(window, window.decorView)
-        if (id != null) {
+        if (hide) {
             bar.visibility = View.GONE
             ctl.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             ctl.hide(WindowInsetsCompat.Type.systemBars())
         } else {
             bar.visibility = View.VISIBLE
-            ctl.show(WindowInsetsCompat.Type.systemBars())
+            if (layoutMode != "quad") ctl.show(WindowInsetsCompat.Type.systemBars())
         }
-        grid.post { relayout() }
+    }
+
+    /** 暫時顯示工具列，6 秒沒操作自動收起 */
+    private fun peekBar(show: Boolean) {
+        handler.removeCallbacks(hideBarLater)
+        if (layoutMode != "quad" || fullId != null) return
+        barPeek = show
+        if (show) handler.postDelayed(hideBarLater, 6000) else barIndex = -1
+        updateBar()
+    }
+
+    /** 選擇某一格要顯示哪一支監視器（四格模式） */
+    private fun pickCamera(slotId: String) {
+        val cams = config.cams
+        val names = cams.map { c ->
+            val pos = order.indexOf(c.id)
+            c.name + if (layoutMode == "quad" && pos in 0..3) "（第 ${pos + 1} 格）" else ""
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("這一格要顯示")
+            .setItems(names) { _, which ->
+                val chosen = cams[which].id
+                val a = order.indexOf(slotId)
+                val b = order.indexOf(chosen)
+                if (a >= 0 && b >= 0 && a != b) {
+                    order[a] = chosen
+                    order[b] = slotId
+                    config.order = order
+                    focusId = chosen
+                    relayout()
+                }
+            }
+            .show()
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
