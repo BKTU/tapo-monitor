@@ -80,6 +80,7 @@ class MainActivity : AppCompatActivity() {
     private var barIndex = -1               // >=0 代表選到上方工具列的第幾個按鈕
     private val barButtons = ArrayList<TextView>()
     private var okDownTime = 0L
+    private var lastAudioId: String? = null
     private val softSmall: Boolean get() = config.softSmall ?: isTv
     private var lastH = 0
 
@@ -213,6 +214,7 @@ class MainActivity : AppCompatActivity() {
         order = config.order.filter { it in ids }.toMutableList()
         ids.filter { it !in order }.forEach { order.add(it) }
         layoutMode = "focus"         // 每次進來都先顯示 1 大 4 小
+        lastAudioId = null
         fullId = null
         if (focusId == null || focusId !in ids) focusId = order.firstOrNull()
         showFocus = isTv
@@ -244,6 +246,7 @@ class MainActivity : AppCompatActivity() {
         var lastPos = -1L
         var lastProgress = SystemClock.elapsedRealtime()
         var retry: Runnable? = null
+        var started = false          // 播放器是否已經連過線（換畫質時要重建）
 
         init {
             view.background = GradientDrawable().apply {
@@ -390,6 +393,17 @@ class MainActivity : AppCompatActivity() {
             player = p
         }
 
+        /** 換畫質時重建播放器：避免硬體／軟體解碼器切換時殘留狀態而出錯 */
+        fun recreatePlayer() {
+            retry?.let { handler.removeCallbacks(it) }
+            retry = null
+            playerView.player = null
+            player?.release()
+            createPlayer()
+            applyAudio()
+            started = false
+        }
+
         fun setPlaying(on: Boolean) {
             statusTv.visibility = if (on) View.GONE else View.VISIBLE
             (dot.background as GradientDrawable).setColor(
@@ -459,6 +473,7 @@ class MainActivity : AppCompatActivity() {
             .createMediaSource(MediaItem.fromUri(config.rtspUrl(t.cam.ip, hd)))
         p.setMediaSource(source)
         p.prepare()
+        t.started = true
         p.playWhenReady = true
         t.setStatus("連線中…")
         t.lastPos = -1L
@@ -521,7 +536,8 @@ class MainActivity : AppCompatActivity() {
         layoutBtn.text = if (layoutMode == "focus") "均分" else "1 大 ${tiles.size - 1} 小"
 
         val rects = HashMap<String, IntArray>()   // x, y, w, h
-        var stagger = 0
+        val downgrades = ArrayList<Tile>()   // 要改成低畫質的（先做，釋放硬體解碼器）
+        val upgrades = ArrayList<Tile>()     // 要改成高畫質的（等前面釋放後再做）
         var clockRect: IntArray? = null
         val n = order.size
         val full = fullId
@@ -601,11 +617,38 @@ class MainActivity : AppCompatActivity() {
             val wantHd = isHd(id)
             if (t.hd != wantHd) {
                 t.hd = wantHd
-                // 錯開連線，避免同時搶解碼器
-                val delay = 700L * stagger++
-                if (delay == 0L) connect(t) else handler.postDelayed({ if (tiles[id] === t) connect(t) }, delay)
+                if (wantHd) upgrades.add(t) else downgrades.add(t)
             }
         }
+
+        // 依序切換畫質：先降、後升，每支錯開，避免同時搶解碼器
+        var delay = 0L
+        for (t in downgrades) {
+            val id = t.cam.id
+            handler.postDelayed({
+                if (tiles[id] === t) { if (t.started) t.recreatePlayer(); connect(t) }
+            }, delay)
+            delay += 300L
+        }
+        if (upgrades.isNotEmpty()) {
+            delay += if (downgrades.any { it.started }) 800L else 0L
+            for (t in upgrades) {
+                val id = t.cam.id
+                handler.postDelayed({
+                    if (tiles[id] === t) { if (t.started) t.recreatePlayer(); connect(t) }
+                }, delay)
+                delay += 300L
+            }
+        }
+
+        // 聲音跟著大畫面：大畫面（或全螢幕那支）開聲音，其他靜音
+        val audioId = fullId ?: if (layoutMode == "focus") order.firstOrNull() else null
+        if (audioId != null && audioId != lastAudioId) {
+            tiles.values.forEach { tt ->
+                tt.setAudio(if (tt.volume <= 0f) 0.8f else tt.volume, tt.cam.id != audioId)
+            }
+        }
+        lastAudioId = audioId
     }
 
     /** 邊框：遙控器選到的用黃色粗框，大畫面用藍框 */
