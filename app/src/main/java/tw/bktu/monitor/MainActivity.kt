@@ -746,7 +746,7 @@ class MainActivity : AppCompatActivity() {
         val focused = showFocus && barIndex < 0 && focusId == t.cam.id && fullId == null
         val quad = layoutMode == "quad" && fullId == null
         val (w, c) = when {
-            focused -> (if (quad) dp(2) else dp(3)) to "#3D8BFF"     // 藍色細框（跟 App 主色一致）
+            focused -> (if (quad) dp(2) else dp(3)) to "#2E7D4F"     // 墨綠色細框
             main -> dp(2) to "#2F6FED"
             quad -> 0 to "#00000000"           // 四格：沒選到就不畫框
             else -> dp(1) to "#222222"
@@ -776,7 +776,7 @@ class MainActivity : AppCompatActivity() {
         tiles.values.forEach { applyStroke(it) }
         barButtons.forEachIndexed { i, b ->
             val current = false   // 不另外標示目前版面，只顯示遙控器選到的那一個
-            val bg = when { i == barIndex -> "#3D8BFF"; current -> "#1F3F7A"; else -> "#262A31" }
+            val bg = when { i == barIndex -> "#2E7D4F"; current -> "#1F3F7A"; else -> "#262A31" }
             (b.background as GradientDrawable).setColor(Color.parseColor(bg))
             b.setTextColor(Color.parseColor(if (i == barIndex || current) "#FFFFFF" else "#DDDDDD"))
         }
@@ -890,6 +890,10 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val cur = focusedTile() ?: run { focusId = order.firstOrNull(); return }
+        // 1 大 4 小：大畫面按「上」直接到工具列
+        if (layoutMode == "focus" && order.isNotEmpty() && cur.cam.id == order[0] && dy < 0 && bar.visibility == View.VISIBLE) {
+            barIndex = 0; return
+        }
         // 1 大 4 小：從大畫面進入小畫面那一排時，固定從第一支開始
         if (layoutMode == "focus" && order.size > 1 && cur.cam.id == order[0]) {
             val landscape = grid.width >= grid.height
