@@ -775,7 +775,7 @@ class MainActivity : AppCompatActivity() {
     private fun refreshFocusUi() {
         tiles.values.forEach { applyStroke(it) }
         barButtons.forEachIndexed { i, b ->
-            val current = (showFocus || !isTv) && layoutButtons[layoutMode] === b
+            val current = false   // 不另外標示目前版面，只顯示遙控器選到的那一個
             val bg = when { i == barIndex -> "#3D8BFF"; current -> "#1F3F7A"; else -> "#262A31" }
             (b.background as GradientDrawable).setColor(Color.parseColor(bg))
             b.setTextColor(Color.parseColor(if (i == barIndex || current) "#FFFFFF" else "#DDDDDD"))
