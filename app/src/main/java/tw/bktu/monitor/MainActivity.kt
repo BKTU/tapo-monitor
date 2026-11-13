@@ -82,6 +82,9 @@ class MainActivity : AppCompatActivity() {
     private val barButtons = ArrayList<TextView>()
     private var okDownTime = 0L
     private var lastAudioId: String? = null
+    /** 遙控器 5 秒沒操作就收起選取框 */
+    private val focusIdle = Runnable { showFocus = false; barIndex = -1; refreshFocusUi() }
+    private fun bumpIdle() { handler.removeCallbacks(focusIdle); handler.postDelayed(focusIdle, 5000) }
     private val softSmall: Boolean get() = config.softSmall ?: isTv
     private var lastH = 0
 
@@ -132,7 +135,11 @@ class MainActivity : AppCompatActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (fullId != null) setFull(null) else finish()
+                when {
+                    fullId != null -> setFull(null)
+                    layoutMode == "quad" -> setLayoutMode("focus")   // 四格按返回 → 1 大 4 小
+                    else -> finish()
+                }
             }
         })
     }
@@ -220,6 +227,7 @@ class MainActivity : AppCompatActivity() {
         fullId = null
         if (focusId == null || focusId !in ids) focusId = order.firstOrNull()
         showFocus = isTv
+        if (isTv) bumpIdle()
 
         cams.forEach { cam ->
             val t = Tile(cam)
@@ -283,7 +291,7 @@ class MainActivity : AppCompatActivity() {
                 // 名稱列關閉時，直接在畫面上操作
                 override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                     if (fullId != null) return true
-                    if (layoutMode == "quad") peekBar(!barPeek) else makeMain(cam.id)
+                    if (layoutMode != "quad") makeMain(cam.id)
                     return true
                 }
                 override fun onLongPress(e: MotionEvent) {
@@ -712,7 +720,7 @@ class MainActivity : AppCompatActivity() {
 
     /** 邊框：遙控器選到的用黃色粗框，大畫面用藍框 */
     private fun applyStroke(t: Tile, i: Int = order.indexOf(t.cam.id)) {
-        val main = fullId == null && layoutMode == "focus" && i == 0
+        val main = showFocus && fullId == null && layoutMode == "focus" && i == 0
         val focused = showFocus && barIndex < 0 && focusId == t.cam.id && fullId == null
         val (w, c) = when {
             focused -> dp(4) to "#FFD400"
@@ -735,7 +743,7 @@ class MainActivity : AppCompatActivity() {
     private fun refreshFocusUi() {
         tiles.values.forEach { applyStroke(it) }
         barButtons.forEachIndexed { i, b ->
-            val current = layoutButtons[layoutMode] === b
+            val current = (showFocus || !isTv) && layoutButtons[layoutMode] === b
             val bg = when { i == barIndex -> "#FFD400"; current -> "#2F6FED"; else -> "#262A31" }
             (b.background as GradientDrawable).setColor(Color.parseColor(bg))
             b.setTextColor(Color.parseColor(if (i == barIndex) "#000000" else if (current) "#FFFFFF" else "#DDDDDD"))
@@ -758,12 +766,19 @@ class MainActivity : AppCompatActivity() {
         if (!ours || tiles.isEmpty()) return super.dispatchKeyEvent(e)
 
         if (isOk(code)) {
-            if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) okDownTime = e.eventTime
+            if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) { okDownTime = e.eventTime; bumpIdle() }
             if (e.action == KeyEvent.ACTION_UP) onOk(e.eventTime - okDownTime > 600)
             return true
         }
         if (e.action != KeyEvent.ACTION_DOWN) return true
+        val wasHidden = !showFocus
         showFocus = true
+        bumpIdle()
+        // 選取框隱藏時，第一下方向鍵只把它叫出來，不移動
+        if (wasHidden && code in listOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT)) {
+            refreshFocusUi(); return true
+        }
         if (barPeek) { handler.removeCallbacks(hideBarLater); handler.postDelayed(hideBarLater, 6000) }
         when (code) {
             KeyEvent.KEYCODE_DPAD_LEFT -> moveFocus(-1, 0)
@@ -883,7 +898,7 @@ class MainActivity : AppCompatActivity() {
     private val hideBarLater = Runnable { if (barPeek) { barPeek = false; barIndex = -1; updateBar(); refreshFocusUi() } }
 
     private fun updateBar() {
-        val hide = fullId != null || (layoutMode == "quad" && !barPeek)
+        val hide = fullId != null || layoutMode == "quad"
         val ctl = WindowCompat.getInsetsController(window, window.decorView)
         if (hide) {
             bar.visibility = View.GONE
@@ -898,7 +913,7 @@ class MainActivity : AppCompatActivity() {
     /** 暫時顯示工具列，6 秒沒操作自動收起 */
     private fun peekBar(show: Boolean) {
         handler.removeCallbacks(hideBarLater)
-        if (layoutMode != "quad" || fullId != null) return
+        if (true) return   // 四格模式不顯示工具列（按返回鍵回到 1 大 4 小）
         barPeek = show
         if (show) handler.postDelayed(hideBarLater, 6000) else barIndex = -1
         updateBar()
