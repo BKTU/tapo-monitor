@@ -54,6 +54,18 @@ class SettingsActivity : AppCompatActivity() {
         col.addView(button("＋ 新增監視器", "#262A31") {
             addRow("c" + System.currentTimeMillis(), "監視器 ${rows.size + 1}", "192.168.68.")
         })
+        // 顯示
+        col.addView(title("顯示", 16f))
+        val labelBtn = button("", "#262A31") {}
+        fun labelText() = if (config.showLabels) "監視器名稱列：顯示" else "監視器名稱列：隱藏"
+        labelBtn.text = labelText()
+        labelBtn.setOnClickListener {
+            config.showLabels = !config.showLabels
+            labelBtn.text = labelText()
+        }
+        col.addView(labelBtn)
+        col.addView(hint("隱藏時：點一下畫面換到大畫面、點兩下全螢幕、長按拖曳排序。"))
+
         // 進階：解碼方式
         col.addView(title("進階", 16f))
         val modes = listOf<Boolean?>(null, true, false)

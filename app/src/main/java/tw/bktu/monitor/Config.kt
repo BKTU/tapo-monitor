@@ -48,6 +48,11 @@ class Config(context: Context) {
         get() = prefs.getString("layout", "focus") ?: "focus"
         set(v) = prefs.edit().putString("layout", v).apply()
 
+    /** 每格下方是否顯示名稱列（名稱、燈號、喇叭、全螢幕按鈕） */
+    var showLabels: Boolean
+        get() = prefs.getBoolean("showLabels", false)
+        set(v) = prefs.edit().putBoolean("showLabels", v).apply()
+
     /** 小畫面用軟體解碼：null = 自動（電視開、手機關） */
     var softSmall: Boolean?
         get() = when (prefs.getInt("softSmall", -1)) { 1 -> true; 0 -> false; else -> null }

@@ -277,6 +277,17 @@ class MainActivity : AppCompatActivity() {
                 override fun onDoubleTap(e: MotionEvent): Boolean {
                     setFull(if (fullId == cam.id) null else cam.id); return true
                 }
+                // 名稱列關閉時，直接在畫面上操作
+                override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                    if (fullId == null) makeMain(cam.id)
+                    return true
+                }
+                override fun onLongPress(e: MotionEvent) {
+                    if (fullId != null) return
+                    val data = ClipData.newPlainText("cam", cam.id)
+                    view.startDragAndDrop(data, View.DragShadowBuilder(view), cam.id, 0)
+                    view.alpha = 0.4f
+                }
             })
             touch.setOnTouchListener { _, ev -> detector.onTouchEvent(ev) }
             view.addView(touch, FrameLayout.LayoutParams(-1, -1))
@@ -330,6 +341,7 @@ class MainActivity : AppCompatActivity() {
                 true
             }
             view.addView(label, FrameLayout.LayoutParams(-1, dp(if (isTv) 44 else 38), Gravity.BOTTOM))
+            label.visibility = if (config.showLabels) View.VISIBLE else View.GONE
 
             // 拖曳目標提示
             dropOverlay.apply {
@@ -638,7 +650,14 @@ class MainActivity : AppCompatActivity() {
             for (t in upgrades) {
                 val id = t.cam.id
                 handler.postDelayed({
-                    if (tiles[id] === t) { val q = t.started; if (q) t.recreatePlayer(); connect(t, quiet = q) }
+                    if (tiles[id] === t) {
+                        // 進全螢幕：不保留舊畫面，直接顯示「載入高畫質」，接上後才出現
+                        t.playerView.setKeepContentOnPlayerReset(false)
+                        if (t.started) t.recreatePlayer()
+                        connect(t)
+                        t.setStatus("載入高畫質…")
+                        t.playerView.setKeepContentOnPlayerReset(true)
+                    }
                 }, delay)
                 delay += 300L
             }
