@@ -81,6 +81,8 @@ class MainActivity : AppCompatActivity() {
     private var barIndex = -1               // >=0 代表選到上方工具列的第幾個按鈕
     private val barButtons = ArrayList<TextView>()
     private var okDownTime = 0L
+    private var longOkFired = false
+    private val longOk = Runnable { longOkFired = true; onOk(true) }
     private var lastAudioId: String? = null
     /** 遙控器 5 秒沒操作就收起選取框 */
     private val focusIdle = Runnable { showFocus = false; barIndex = -1; refreshFocusUi() }
@@ -790,8 +792,18 @@ class MainActivity : AppCompatActivity() {
         if (!ours || tiles.isEmpty()) return super.dispatchKeyEvent(e)
 
         if (isOk(code)) {
-            if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) { okDownTime = e.eventTime; bumpIdle() }
-            if (e.action == KeyEvent.ACTION_UP) onOk(e.eventTime - okDownTime > 600)
+            // 長按：按住 0.6 秒就直接觸發，不用等放開
+            if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0) {
+                okDownTime = e.eventTime
+                longOkFired = false
+                bumpIdle()
+                handler.removeCallbacks(longOk)
+                handler.postDelayed(longOk, 600)
+            }
+            if (e.action == KeyEvent.ACTION_UP) {
+                handler.removeCallbacks(longOk)
+                if (!longOkFired) onOk(false)
+            }
             return true
         }
         if (e.action != KeyEvent.ACTION_DOWN) return true
