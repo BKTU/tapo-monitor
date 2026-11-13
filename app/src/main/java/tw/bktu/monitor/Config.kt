@@ -44,6 +44,11 @@ class Config(context: Context) {
         get() = (prefs.getString("order", "") ?: "").split(",").filter { it.isNotBlank() }
         set(v) = prefs.edit().putString("order", v.joinToString(",")).apply()
 
+    /** 四格模式的四支（獨立於 1 大 4 小的排序） */
+    var quadOrder: List<String>
+        get() = (prefs.getString("quadOrder", "") ?: "").split(",").filter { it.isNotBlank() }
+        set(v) = prefs.edit().putString("quadOrder", v.joinToString(",")).apply()
+
     var layout: String
         get() = prefs.getString("layout", "focus") ?: "focus"
         set(v) = prefs.edit().putString("layout", v).apply()

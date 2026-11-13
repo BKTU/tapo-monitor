@@ -67,6 +67,7 @@ class MainActivity : AppCompatActivity() {
 
     private val tiles = LinkedHashMap<String, Tile>()
     private var order = mutableListOf<String>()
+    private var quadOrder = mutableListOf<String>()   // 四格有自己的排序，不受 1 大 4 小影響
     private var layoutMode = "focus"
     private var fullId: String? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -224,6 +225,8 @@ class MainActivity : AppCompatActivity() {
         val ids = cams.map { it.id }
         order = config.order.filter { it in ids }.toMutableList()
         ids.filter { it !in order }.forEach { order.add(it) }
+        quadOrder = config.quadOrder.filter { it in ids }.distinct().toMutableList()
+        for (id in order) if (quadOrder.size < minOf(4, ids.size) && id !in quadOrder) quadOrder.add(id)
         // 開啟時的版面：設定裡選（預設 1 大 4 小；也可以選「上次使用」）
         layoutMode = when (val st = config.startLayout) {
             "last" -> config.layout.takeIf { it in listOf("focus", "even", "quad") } ?: "focus"
@@ -602,7 +605,7 @@ class MainActivity : AppCompatActivity() {
             // 四格：2×2 填滿螢幕，排序前四支；其餘暫停
             val cellW = (w - gap) / 2
             val cellH = (h - gap) / 2
-            order.take(4).forEachIndexed { i, id ->
+            quadOrder.forEachIndexed { i, id ->
                 rects[id] = intArrayOf((i % 2) * (cellW + gap), (i / 2) * (cellH + gap), cellW, cellH)
             }
         } else if (layoutMode == "focus" && n > 1) {
@@ -736,11 +739,11 @@ class MainActivity : AppCompatActivity() {
 
     /** 邊框：遙控器選到的用黃色粗框，大畫面用藍框 */
     private fun applyStroke(t: Tile, i: Int = order.indexOf(t.cam.id)) {
-        val main = showFocus && fullId == null && layoutMode == "focus" && i == 0
+        val main = false   // 大畫面不另外加框，避免兩種框混在一起
         val focused = showFocus && barIndex < 0 && focusId == t.cam.id && fullId == null
         val quad = layoutMode == "quad" && fullId == null
         val (w, c) = when {
-            focused -> (if (quad) dp(2) else dp(3)) to "#E6FFFFFF"   // 細白框，比較不突兀
+            focused -> (if (quad) dp(2) else dp(3)) to "#3D8BFF"     // 藍色細框（跟 App 主色一致）
             main -> dp(2) to "#2F6FED"
             quad -> 0 to "#00000000"           // 四格：沒選到就不畫框
             else -> dp(1) to "#222222"
@@ -770,9 +773,9 @@ class MainActivity : AppCompatActivity() {
         tiles.values.forEach { applyStroke(it) }
         barButtons.forEachIndexed { i, b ->
             val current = (showFocus || !isTv) && layoutButtons[layoutMode] === b
-            val bg = when { i == barIndex -> "#F0F0F0"; current -> "#2F6FED"; else -> "#262A31" }
+            val bg = when { i == barIndex -> "#3D8BFF"; current -> "#1F3F7A"; else -> "#262A31" }
             (b.background as GradientDrawable).setColor(Color.parseColor(bg))
-            b.setTextColor(Color.parseColor(if (i == barIndex) "#000000" else if (current) "#FFFFFF" else "#DDDDDD"))
+            b.setTextColor(Color.parseColor(if (i == barIndex || current) "#FFFFFF" else "#DDDDDD"))
         }
     }
 
@@ -798,7 +801,7 @@ class MainActivity : AppCompatActivity() {
                 longOkFired = false
                 bumpIdle()
                 handler.removeCallbacks(longOk)
-                handler.postDelayed(longOk, 600)
+                handler.postDelayed(longOk, 300)
             }
             if (e.action == KeyEvent.ACTION_UP) {
                 handler.removeCallbacks(longOk)
@@ -831,7 +834,9 @@ class MainActivity : AppCompatActivity() {
                 setFull(if (fullId != null) null else focusId)
             else -> {
                 val n = code - KeyEvent.KEYCODE_1
-                if (n in order.indices) {
+                if (layoutMode == "quad" && fullId == null) {
+                    if (n in quadOrder.indices) focusId = quadOrder[n]
+                } else if (n in order.indices) {
                     focusId = order[n]
                     if (fullId != null) setFull(focusId) else makeMain(order[n])
                 }
@@ -964,19 +969,19 @@ class MainActivity : AppCompatActivity() {
     private fun pickCamera(slotId: String) {
         val cams = config.cams
         val names = cams.map { c ->
-            val pos = order.indexOf(c.id)
-            c.name + if (layoutMode == "quad" && pos in 0..3) "（第 ${pos + 1} 格）" else ""
+            val pos = quadOrder.indexOf(c.id)
+            c.name + if (pos >= 0) "（第 ${pos + 1} 格）" else ""
         }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("這一格要顯示")
             .setItems(names) { _, which ->
                 val chosen = cams[which].id
-                val a = order.indexOf(slotId)
-                val b = order.indexOf(chosen)
-                if (a >= 0 && b >= 0 && a != b) {
-                    order[a] = chosen
-                    order[b] = slotId
-                    config.order = order
+                val a = quadOrder.indexOf(slotId)
+                val b = quadOrder.indexOf(chosen)
+                if (a >= 0 && a != b) {
+                    if (b >= 0) quadOrder[b] = slotId   // 已在其他格 → 兩格互換
+                    quadOrder[a] = chosen
+                    config.quadOrder = quadOrder
                     focusId = chosen
                     relayout()
                 }
